@@ -49,6 +49,8 @@ class CloudSyncService {
     if (client == null || uid == null) return;
 
     try {
+      // from('profiles') 选表，upsert = 有这条(id 相同)就更新、没有就插入。
+      // 字段名是建表 SQL 里的 snake_case（height_cm），和 Dart 的驼峰不一样。
       await client.from('profiles').upsert({
         'id': uid,
         'name': profile.name,
@@ -82,6 +84,7 @@ class CloudSyncService {
     if (client == null || uid == null) return null;
 
     try {
+      // 链式查询：from 选表 → select 取全部列 → eq 按 id 过滤 → maybeSingle 取一行（没有返回 null，不报错）
       final rows = await client
           .from('profiles')
           .select()
@@ -123,6 +126,8 @@ class CloudSyncService {
     if (client == null || uid == null || items.isEmpty) return;
 
     try {
+      // 每条日志整份存进 jsonb 的 data 列，省得为每个字段建列。
+      // 行结构：{ id, user_id, data }，id 是本地生成的那串，跨设备也唯一。
       final rows = items.map((data) {
         final row = <String, dynamic>{
           'id': data['id'],
@@ -135,6 +140,7 @@ class CloudSyncService {
         return row;
       }).toList();
 
+      // upsert 按主键 id 冲突时覆盖，所以同一批推多次也不会重复
       await client.from(table).upsert(rows);
     } catch (_) {}
   }
@@ -145,6 +151,7 @@ class CloudSyncService {
     if (client == null) return [];
 
     try {
+      // select('data') 只取 data 这一列，返回 [{data: {...}}, ...]，比取整行省流量
       final rows = await client.from(table).select('data');
       return (rows as List)
           .map((r) => (r['data'] as Map).cast<String, dynamic>())
@@ -167,7 +174,9 @@ class CloudSyncService {
     if (client == null || uid == null) return null;
 
     try {
-      final path = '$uid/avatar';
+      final path = '$uid/avatar'; // 路径带 uid，天然隔离：每人只存自己那一份
+      // storage.from('avatars') 选桶 → uploadBinary 传字节流。
+      // upsert:true 表示同名就覆盖，所以换头像不用先删旧的。
       await client.storage.from('avatars').uploadBinary(
             path,
             bytes,
@@ -176,6 +185,7 @@ class CloudSyncService {
               contentType: 'image/jpeg',
             ),
           );
+      // 桶是 public 的，拿到公开 URL 就能直接放进 Image 组件显示
       return client.storage.from('avatars').getPublicUrl(path);
     } catch (_) {
       return null;

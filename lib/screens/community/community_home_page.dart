@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/community_post.dart';
 import '../../services/community_service.dart';
@@ -9,11 +10,14 @@ import '../../services/user_store.dart';
 import '../../widgets/user_avatar.dart';
 import '../auth/auth_page.dart';
 import 'new_post_page.dart';
+import 'post_detail_page.dart';
 
-/// 社区页
+/// 社区页（朋友圈风格）
 ///
-/// 展示大家的训练效果和饮食分享，可点赞、发帖、删自己的帖。
-/// 未登录只能看，发帖/点赞会引导先登录。
+/// 展示大家的训练效果和饮食分享，可点赞、评论、发帖、删自己的帖。
+/// - 分页：滚到底部自动加载更多
+/// - 实时：别人发新帖会在顶部提示
+/// - 未登录只能看，发帖/点赞/评论会引导先登录
 class CommunityHomePage extends StatefulWidget {
   const CommunityHomePage({super.key});
 
@@ -22,21 +26,69 @@ class CommunityHomePage extends StatefulWidget {
 }
 
 class _CommunityHomePageState extends State<CommunityHomePage> {
-  List<CommunityPost>? _posts;
+  final _scrollCtrl = ScrollController();
+
+  List<CommunityPost> _posts = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _newCount = 0;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _scrollCtrl.addListener(_onScroll);
+    _subscribeNewPosts();
   }
 
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+
+  /// 首次/刷新加载：重置到第一页
   Future<void> _load() async {
-    final posts = await CommunityService.fetchPosts();
+    final posts = await CommunityService.fetchPosts(offset: 0);
     if (!mounted) return;
     setState(() {
       _posts = posts;
+      _hasMore = posts.length >= CommunityService.pageSize;
       _loading = false;
+      _newCount = 0;
+    });
+  }
+
+  /// 加载下一页，追加到列表尾部
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+
+    final more = await CommunityService.fetchPosts(offset: _posts.length);
+    if (!mounted) return;
+
+    setState(() {
+      _posts = [..._posts, ...more];
+      _hasMore = more.length >= CommunityService.pageSize;
+      _loadingMore = false;
+    });
+  }
+
+  void _onScroll() {
+    // 距底部还有 200px 时触发加载下一页
+    if (_scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  /// 订阅实时事件：有人发新帖，顶部 +1 提示
+  void _subscribeNewPosts() {
+    _channel = CommunityService.subscribeToNewPosts(() {
+      if (mounted) setState(() => _newCount++);
     });
   }
 
@@ -53,12 +105,21 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
     if (posted == true) _load();
   }
 
+  Future<void> _openDetail(CommunityPost post) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+    );
+    // 详情里可能评论/点赞了，回来刷新一遍数据
+    _load();
+  }
+
   void _promptLogin() {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('请先登录'),
-        content: const Text('登录后即可发帖和点赞。'),
+        content: const Text('登录后即可发帖、点赞和评论。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -80,18 +141,16 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
   }
 
   Future<void> _toggleLike(CommunityPost post) async {
-    final store = context.read<UserStore>();
-    if (!store.isSignedIn) {
+    if (!context.read<UserStore>().isSignedIn) {
       _promptLogin();
       return;
     }
     final liked = await CommunityService.toggleLike(post.id);
-    if (!mounted || _posts == null) return;
+    if (!mounted) return;
 
     setState(() {
-      _posts = _posts!.map((p) {
+      _posts = _posts.map((p) {
         if (p.id != post.id) return p;
-        // 直接重建这条帖子，更新点赞状态
         return CommunityPost(
           id: p.id,
           userId: p.userId,
@@ -104,6 +163,7 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
           mealSnapshot: p.mealSnapshot,
           likesCount: liked ? p.likesCount + 1 : p.likesCount - 1,
           likedByMe: liked,
+          commentCount: p.commentCount,
         );
       }).toList();
     });
@@ -146,54 +206,97 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _posts == null || _posts!.isEmpty
-              ? _buildEmpty()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-                    itemCount: _posts!.length,
-                    itemBuilder: (context, i) =>
-                        _PostCard(
-                          post: _posts![i],
-                          onLike: () => _toggleLike(_posts![i]),
-                          onDelete: () => _deletePost(_posts![i]),
-                        ),
+          : Column(
+              children: [
+                // 实时：有新帖子时顶部提示，点一下刷新到最新
+                if (_newCount > 0) _buildNewPostsBar(),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      controller: _scrollCtrl,
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+                      itemCount: _posts.length + 1,
+                      itemBuilder: (context, i) {
+                        if (i < _posts.length) {
+                          return _PostCard(
+                            post: _posts[i],
+                            onTap: () => _openDetail(_posts[i]),
+                            onLike: () => _toggleLike(_posts[i]),
+                            onDelete: () => _deletePost(_posts[i]),
+                          );
+                        }
+                        return _buildFooter();
+                      },
+                    ),
                   ),
                 ),
+              ],
+            ),
     );
   }
 
-  Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.forum_outlined, size: 56, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
-          const Text(
-            '还没有帖子',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+  /// 顶部「有 N 条新动态」提示条
+  Widget _buildNewPostsBar() {
+    return Material(
+      color: Colors.blue.shade50,
+      child: InkWell(
+        onTap: _load,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          child: Text(
+            '有 $_newCount 条新动态，点击查看',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.blue.shade700,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '点右下角，分享你的训练效果或饮食吧',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  Widget _buildFooter() {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (!_hasMore && _posts.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text(
+            '没有更多了',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ),
+      );
+    }
+    return const SizedBox(height: 8);
   }
 }
 
 /// 单条帖子卡片
 class _PostCard extends StatelessWidget {
   final CommunityPost post;
+  final VoidCallback onTap;
   final VoidCallback onLike;
   final VoidCallback onDelete;
 
   const _PostCard({
     required this.post,
+    required this.onTap,
     required this.onLike,
     required this.onDelete,
   });
@@ -213,7 +316,6 @@ class _PostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 作者行
           Row(
             children: [
               UserAvatar(avatarUrl: post.authorAvatar, radius: 18),
@@ -247,49 +349,56 @@ class _PostCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // 正文
-          if (post.text.isNotEmpty)
-            Text(post.text, style: const TextStyle(fontSize: 14, height: 1.4)),
-
-          // 图片
-          if (post.imageUrl != null) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                post.imageUrl!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 120,
-                  color: Colors.grey.shade100,
-                  child: const Center(child: Icon(Icons.broken_image)),
-                ),
-              ),
-            ),
-          ],
-
-          // 快照标签
-          if (post.workoutSnapshot != null || post.mealSnapshot != null) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
+          // 正文 + 图片 + 快照，整块点击进详情
+          InkWell(
+            onTap: onTap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (post.workoutSnapshot != null)
-                  _snapshotChip(Icons.fitness_center, Colors.blue,
-                      _workoutText(post.workoutSnapshot!)),
-                if (post.mealSnapshot != null)
-                  _snapshotChip(Icons.restaurant, Colors.orange,
-                      _mealText(post.mealSnapshot!)),
+                if (post.text.isNotEmpty)
+                  Text(post.text,
+                      style: const TextStyle(fontSize: 14, height: 1.4)),
+                if (post.imageUrl != null) ...[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      post.imageUrl!,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 120,
+                        color: Colors.grey.shade100,
+                        child:
+                            const Center(child: Icon(Icons.broken_image)),
+                      ),
+                    ),
+                  ),
+                ],
+                if (post.workoutSnapshot != null ||
+                    post.mealSnapshot != null) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (post.workoutSnapshot != null)
+                        _snapshotChip(Icons.fitness_center, Colors.blue,
+                            _workoutText(post.workoutSnapshot!)),
+                      if (post.mealSnapshot != null)
+                        _snapshotChip(Icons.restaurant, Colors.orange,
+                            _mealText(post.mealSnapshot!)),
+                    ],
+                  ),
+                ],
               ],
             ),
-          ],
+          ),
 
           const SizedBox(height: 10),
           const Divider(height: 1),
           const SizedBox(height: 6),
 
-          // 点赞
+          // 点赞 + 评论入口
           Row(
             children: [
               InkWell(
@@ -314,6 +423,27 @@ class _PostCard extends StatelessWidget {
                           fontSize: 13,
                           color: post.likedByMe ? Colors.red : Colors.grey,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(20),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.chat_bubble_outline,
+                          size: 18, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${post.commentCount}',
+                        style:
+                            const TextStyle(fontSize: 13, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -345,15 +475,12 @@ class _PostCard extends StatelessWidget {
   }
 
   String _workoutText(Map<String, dynamic> s) {
-    final day = s['dayName'];
     final mins = s['durationMinutes'];
-    if (day == null && mins == null) return '训练打卡';
-    return '训练：${day ?? ''} ${mins != null ? '$mins分钟' : ''}'.trim();
+    return mins != null ? '训练 $mins 分钟' : '训练打卡';
   }
 
   String _mealText(Map<String, dynamic> s) {
     final kcal = s['calories'];
-    if (kcal == null) return '饮食记录';
-    return '饮食：${kcal.toStringAsFixed(0)} 千卡';
+    return kcal != null ? '饮食 ${kcal.toStringAsFixed(0)} 千卡' : '饮食记录';
   }
 }

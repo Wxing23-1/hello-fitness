@@ -19,6 +19,7 @@ class CommunityPost {
   final DateTime createdAt;
   final int likesCount;
   final bool likedByMe;
+  final int commentCount;
 
   const CommunityPost({
     required this.id,
@@ -32,12 +33,14 @@ class CommunityPost {
     this.mealSnapshot,
     this.likesCount = 0,
     this.likedByMe = false,
+    this.commentCount = 0,
   });
 
   factory CommunityPost.fromMap(
     Map<String, dynamic> map, {
     int likesCount = 0,
     bool likedByMe = false,
+    int commentCount = 0,
   }) {
     return CommunityPost(
       id: map['id'] as String? ?? '',
@@ -54,6 +57,7 @@ class CommunityPost {
               DateTime.now(),
       likesCount: likesCount,
       likedByMe: likedByMe,
+      commentCount: commentCount,
     );
   }
 }

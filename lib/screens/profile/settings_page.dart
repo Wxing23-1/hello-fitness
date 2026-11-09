@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/user_store.dart';
+import '../../services/auth_service.dart';
 
 /// 系统设置中心
 ///
@@ -145,18 +146,11 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // 退出登录（登录功能在 Week 3，现在只是占位）
+          // 退出登录：已登录时真正登出，未登录时提示
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('登录功能将在 Week 3 实现'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
+              onPressed: () => _handleSignOut(context, store),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.red,
                 side: const BorderSide(color: Colors.red),
@@ -175,6 +169,41 @@ class SettingsPage extends StatelessWidget {
   // ═══════════════════════════════════════════════════
   //  可复用的小组件
   // ═══════════════════════════════════════════════════
+
+  /// 退出登录：确认后调 AuthService.signOut()，AuthGate 监听到状态变化会切回登录页
+  Future<void> _handleSignOut(BuildContext context, UserStore store) async {
+    if (!store.isSignedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('当前未登录'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('退出后本地数据仍会保留，登录后可再次同步。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('退出'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await AuthService.signOut();
+    }
+  }
 
   /// 分组标题
   Widget _groupTitle(String text) {

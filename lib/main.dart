@@ -13,8 +13,8 @@ import 'services/user_store.dart';
 import 'services/local_storage.dart';
 // 导入 Supabase 连接配置
 import 'services/supabase_config.dart';
-// 导入主框架页面（带底部导航栏的那个骨架）
-import 'screens/home/main_screen.dart';
+// 导入登录门卫：未登录先显示登录页，登录后进主界面
+import 'screens/auth/auth_gate.dart';
 
 // 程序入口函数 - 应用启动时首先执行这里
 //
@@ -84,7 +84,7 @@ class MyApp extends StatelessWidget {
       // 用哪套主题由设置页的开关决定
       themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
 
-      home: const MainScreen(), // 首页改为主框架，由它管理5个标签页
+      home: const AuthGate(), // 未登录先进登录页，登录后进入主界面
     );
   }
 }

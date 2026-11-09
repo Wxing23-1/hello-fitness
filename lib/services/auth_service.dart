@@ -86,6 +86,38 @@ class AuthService {
     }
   }
 
+  /// 用新密码更新当前用户密码（找回密码流程的最后一步）
+  ///
+  /// 调用前提：当前是密码重置会话（用户点了重置邮件里的链接后）。
+  /// 成功后不用重新登录，当前会话仍然有效。
+  static Future<AuthResult> updatePassword(String newPassword) async {
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+      return const AuthResult.ok();
+    } on AuthException catch (e) {
+      return AuthResult.fail(_friendly(e.message));
+    } catch (_) {
+      return const AuthResult.fail('网络错误，请检查连接');
+    }
+  }
+
+  /// 发送找回密码邮件
+  ///
+  /// 成功后 Supabase 会往这个邮箱发一封带重置链接的邮件，
+  /// 用户点链接即可设置新密码。
+  static Future<AuthResult> resetPassword(String email) async {
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
+      return const AuthResult.ok();
+    } on AuthException catch (e) {
+      return AuthResult.fail(_friendly(e.message));
+    } catch (_) {
+      return const AuthResult.fail('网络错误，请检查连接');
+    }
+  }
+
   /// 把 Supabase 返回的英文错误转成中文提示
   static String _friendly(String message) {
     final m = message.toLowerCase();

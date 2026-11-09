@@ -49,10 +49,20 @@ class UserStore extends ChangeNotifier {
   /// 用户登录（含启动时已登录）就拉云端数据合并进本地；
   /// 登出不动本地数据，切回纯本地模式。
   /// Supabase 未初始化（单元测试）时静默跳过。
+  ///
+  /// 注意三种事件都要处理：
+  /// - signedIn：表单登录成功
+  /// - initialSession：启动时恢复了已保存的会话（重开 APP 没重新登录）
+  /// - passwordRecovery：点了重置邮件里的链接
+  /// 三者都代表「已登录」，都要拉一次云端，否则重开后看不到云端资料。
   void _watchAuth() {
     try {
       Supabase.instance.client.auth.onAuthStateChange.listen((state) {
-        if (state.event == AuthChangeEvent.signedIn) {
+        if (state.session == null) return;
+        final e = state.event;
+        if (e == AuthChangeEvent.signedIn ||
+            e == AuthChangeEvent.initialSession ||
+            e == AuthChangeEvent.passwordRecovery) {
           _pullFromCloud();
         }
       });
@@ -264,11 +274,16 @@ class UserStore extends ChangeNotifier {
     await _syncItems('workout_logs', 'workout_logs');
     await _syncItems('meal_entries', 'meal_entries');
     await _syncItems('weight_logs', 'weight_logs');
+    await _syncItems('ai_plans', 'ai_plans');
+    await _syncItems('custom_foods', 'custom_foods');
 
     notifyListeners();
   }
 
   /// 把云端 profile 行套用到内存（云端优先）
+  ///
+  /// 枚举（性别/目标/活动强度）在数据库里存的是 int（枚举的 index），
+  /// 这里按 index 反查，越界就退回默认值，避免脏数据把界面搞崩。
   void _applyCloudProfile(Map<String, dynamic> p) {
     final genderIdx = p['gender'] as int? ?? 0;
     final gender = (genderIdx >= 0 && genderIdx < Gender.values.length)
@@ -323,6 +338,8 @@ class UserStore extends ChangeNotifier {
       'workout_logs' => _workoutLogs.map((e) => e.toMap()).toList(),
       'meal_entries' => _meals.map((e) => e.toMap()).toList(),
       'weight_logs' => _weightLogs.map((e) => e.toMap()).toList(),
+      'ai_plans' => _aiPlans.map((e) => e.toMap()).toList(),
+      'custom_foods' => _customFoods.map((e) => e.toMap()).toList(),
       _ => <Map<String, dynamic>>[],
     };
 
@@ -338,6 +355,12 @@ class UserStore extends ChangeNotifier {
       case 'weight_logs':
         _weightLogs = merged.map((m) => WeightLog.fromMap(m)).toList();
         _persistWeightLogs();
+      case 'ai_plans':
+        _aiPlans = merged.map((m) => TrainingPlan.fromMap(m)).toList();
+        _persistAiPlans();
+      case 'custom_foods':
+        _customFoods = merged.map((m) => FoodItem.fromMap(m)).toList();
+        _persistCustomFoods();
     }
   }
 
@@ -764,6 +787,10 @@ class UserStore extends ChangeNotifier {
     LocalStorage.saveCustomFoods(
       _customFoods.map((f) => jsonEncode(f.toMap())).toList(),
     );
+    CloudSyncService.pushItems(
+      'custom_foods',
+      _customFoods.map((f) => f.toMap()).toList(),
+    );
   }
 
   // ═══════════════════════════════════════════════════
@@ -967,6 +994,10 @@ class UserStore extends ChangeNotifier {
   void _persistAiPlans() {
     LocalStorage.saveAiPlans(
       _aiPlans.map((p) => jsonEncode(p.toMap())).toList(),
+    );
+    CloudSyncService.pushItems(
+      'ai_plans',
+      _aiPlans.map((p) => p.toMap()).toList(),
     );
   }
 

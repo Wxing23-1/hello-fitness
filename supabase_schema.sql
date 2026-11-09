@@ -89,6 +89,38 @@ create policy "weight_logs: 本人可读写"
   with check (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────────────────────
+-- 4b. AI 生成的训练计划（整条存 jsonb）
+-- ─────────────────────────────────────────────────────────
+create table if not exists public.ai_plans (
+  id         text        primary key,
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  data       jsonb       not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.ai_plans enable row level security;
+create policy "ai_plans: 本人可读写"
+  on public.ai_plans for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────────────────────
+-- 4c. 自定义食物（整条存 jsonb）
+-- ─────────────────────────────────────────────────────────
+create table if not exists public.custom_foods (
+  id         text        primary key,
+  user_id    uuid        not null references auth.users (id) on delete cascade,
+  data       jsonb       not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.custom_foods enable row level security;
+create policy "custom_foods: 本人可读写"
+  on public.custom_foods for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────────────────────
 -- 5. 社区帖子（所有人可读，只能改自己的）
 -- ─────────────────────────────────────────────────────────
 create table if not exists public.community_posts (
@@ -127,6 +159,27 @@ create policy "post_likes: 本人可点赞/取消"
   on public.post_likes for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────────────────────
+-- 6b. 帖子评论
+-- ─────────────────────────────────────────────────────────
+create table if not exists public.post_comments (
+  id            uuid        primary key default gen_random_uuid(),
+  post_id       uuid        not null references public.community_posts (id) on delete cascade,
+  user_id       uuid        not null references auth.users (id) on delete cascade,
+  author_name   text        not null default '健身达人',
+  author_avatar text,
+  text          text        not null,
+  created_at    timestamptz not null default now()
+);
+
+alter table public.post_comments enable row level security;
+create policy "post_comments: 所有人可读"
+  on public.post_comments for select using (true);
+create policy "post_comments: 本人可发"
+  on public.post_comments for insert with check (auth.uid() = user_id);
+create policy "post_comments: 本人可删"
+  on public.post_comments for delete using (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────────────────────
 -- 7. Storage：头像桶（公开可读，登录用户可上传自己的）

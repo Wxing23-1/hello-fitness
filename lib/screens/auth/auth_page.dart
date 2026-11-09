@@ -10,7 +10,10 @@ import '../../services/user_store.dart';
 /// 成功后直接返回上一页 —— 登录态由 UserStore 里的 authStateChanges 监听
 /// 感知并触发云同步，页面自己不用处理。
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key});
+  /// 点「暂不登录」时的回调（由 AuthGate 传入，用于跳过登录直接进主界面）
+  final VoidCallback? onSkip;
+
+  const AuthPage({super.key, this.onSkip});
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -71,6 +74,68 @@ class _AuthPageState extends State<AuthPage> {
         _error = result.error;
       });
     }
+  }
+
+  /// 忘记密码：弹窗输入邮箱，发送重置邮件
+  Future<void> _forgotPassword() async {
+    final emailCtrl = TextEditingController();
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('找回密码'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '输入注册邮箱，我们会发送重置密码的链接。',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: '邮箱',
+                prefixIcon: Icon(Icons.email_outlined),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, emailCtrl.text.trim()),
+            child: const Text('发送'),
+          ),
+        ],
+      ),
+    );
+
+    emailCtrl.dispose();
+
+    if (email == null || !mounted) return;
+    if (email.isEmpty) {
+      _showMessage('请输入邮箱');
+      return;
+    }
+
+    final result = await AuthService.resetPassword(email);
+    if (!mounted) return;
+    _showMessage(
+      result.success ? '重置邮件已发送，请查收邮箱' : (result.error ?? '发送失败'),
+    );
+  }
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
   }
 
   @override
@@ -155,6 +220,20 @@ class _AuthPageState extends State<AuthPage> {
                     }),
             child: Text(_isRegister ? '已有账号？去登录' : '没有账号？去注册'),
           ),
+          // 登录模式才显示忘记密码
+          if (!_isRegister)
+            TextButton(
+              onPressed: _busy ? null : _forgotPassword,
+              child: const Text('忘记密码？'),
+            ),
+          if (widget.onSkip != null)
+            TextButton(
+              onPressed: _busy ? null : widget.onSkip,
+              child: const Text(
+                '暂不登录，随便看看',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
         ],
       ),
     );
