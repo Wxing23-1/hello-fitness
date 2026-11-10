@@ -10,7 +10,7 @@ import 'auth_service.dart';
 ///
 /// 登录后把本地数据推到 Supabase，换设备时拉回来。
 /// 策略：
-///   - profile/goal/settings 是「单份」，整行 upsert，登录时云端覆盖本地
+///   - profile/goal/settings 是「单份」，整行 upsert；冲突按 updated_at 谁新谁赢
 ///   - workout_logs / meal_entries / weight_logs 是「日志列表」，按 id 合并取并集
 ///
 /// 所有方法都 try-catch：Supabase 未初始化（单元测试）或网络失败时

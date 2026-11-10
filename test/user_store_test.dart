@@ -245,6 +245,53 @@ void main() {
   });
 
   // ══════════════════════════════════════════
+  //  云同步冲突判断（谁新谁赢）
+  // ══════════════════════════════════════════
+  group('cloudIsNewer', () {
+    test('本地没时间戳时云端优先', () {
+      expect(
+        UserStore.cloudIsNewer(null, '2026-11-10T00:00:00Z'),
+        true,
+      );
+    });
+
+    test('云端没时间戳时云端优先（兜底）', () {
+      expect(
+        UserStore.cloudIsNewer('2026-11-10T00:00:00Z', null),
+        true,
+      );
+    });
+
+    test('云端更新返回 true', () {
+      expect(
+        UserStore.cloudIsNewer('2026-11-10T00:00:00Z', '2026-11-11T00:00:00Z'),
+        true,
+      );
+    });
+
+    test('本地更新返回 false', () {
+      expect(
+        UserStore.cloudIsNewer('2026-11-11T00:00:00Z', '2026-11-10T00:00:00Z'),
+        false,
+      );
+    });
+
+    test('时间相等返回 false（保留本地）', () {
+      expect(
+        UserStore.cloudIsNewer('2026-11-10T00:00:00Z', '2026-11-10T00:00:00Z'),
+        false,
+      );
+    });
+
+    test('时间戳解析失败返回 true（云端兜底）', () {
+      expect(
+        UserStore.cloudIsNewer('not-a-date', 'also-not-a-date'),
+        true,
+      );
+    });
+  });
+
+  // ══════════════════════════════════════════
   //  重置
   // ══════════════════════════════════════════
   group('resetAll', () {

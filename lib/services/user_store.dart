@@ -81,6 +81,12 @@ class UserStore extends ChangeNotifier {
   FitnessGoal _goal = FitnessGoal.initial();
   List<WorkoutRecord> _records = WorkoutRecord.demoRecords();
 
+  /// 资料包（profile+goal+settings+activity）最后修改时间，ISO 字符串。
+  ///
+  /// 用于云同步冲突判断：登录时对比本地和云端的 updated_at，
+  /// 谁新谁赢，避免「登录把本地离线改动覆盖掉」或「旧数据盖新数据」。
+  String? _profileUpdatedAt;
+
   /// 所有课程库
   final List<Course> _allCourses = Course.demoCourses();
 
@@ -142,6 +148,8 @@ class UserStore extends ChangeNotifier {
 
     final goal = LocalStorage.loadGoal();
     if (goal != null) _goal = goal;
+
+    _profileUpdatedAt = LocalStorage.loadProfileUpdatedAt();
 
     // null 表示从没存过，保留演示数据；空列表表示用户主动清空了，要尊重
     final records = LocalStorage.loadRecords();
@@ -238,6 +246,7 @@ class UserStore extends ChangeNotifier {
       waterReminder: _waterReminder,
       unitSystem: _unitSystem,
     );
+    _touchProfile();
     _pushProfile();
   }
 
@@ -258,17 +267,55 @@ class UserStore extends ChangeNotifier {
     );
   }
 
+  /// 本地资料包有改动：把「最后修改时间」刷新成现在并落盘
+  ///
+  /// 每次本地编辑资料/目标/设置/活动强度都要调，这样登录时才能
+  /// 拿这个时间戳和云端的 updated_at 比，判断谁新谁旧。
+  void _touchProfile() {
+    _profileUpdatedAt = DateTime.now().toUtc().toIso8601String();
+    LocalStorage.saveProfileUpdatedAt(_profileUpdatedAt!);
+  }
+
+  /// 判断云端是否比本地新（谁新谁赢的「赢家判定」）
+  ///
+  /// 返回 true = 云端更新，应该拉下来覆盖本地；false = 本地更新或相等，保留本地。
+  /// 任一时间为 null 或解析失败时，保守起见返回 true（云端优先）。
+  static bool cloudIsNewer(String? localUpdatedAt, String? cloudUpdatedAt) {
+    if (cloudUpdatedAt == null) return true;
+    if (localUpdatedAt == null) return true;
+    final local = DateTime.tryParse(localUpdatedAt);
+    final remote = DateTime.tryParse(cloudUpdatedAt);
+    if (local == null || remote == null) return true;
+    return remote.isAfter(local);
+  }
+
   /// 登录后从云端拉数据合并进本地
   ///
-  /// 单份数据（资料/目标/设置）云端覆盖本地；日志列表按 id 取并集。
+  /// 单份数据（资料/目标/设置）按时间戳谁新谁赢；日志列表按 id 取并集。
   Future<void> _pullFromCloud() async {
     final profile = await CloudSyncService.pullProfile();
     if (profile != null) {
-      _applyCloudProfile(profile);
+      final cloudUpdatedAt = profile['updated_at'] as String?;
+      if (cloudIsNewer(_profileUpdatedAt, cloudUpdatedAt)) {
+        // 云端新：拉下来覆盖本地，本地时间戳对齐云端
+        _applyCloudProfile(profile);
+        _profileUpdatedAt = cloudUpdatedAt;
+      } else {
+        // 本地新（有离线改动）：别覆盖，把本地推回云端
+        _pushProfile();
+      }
       LocalStorage.saveProfile(_profile);
       LocalStorage.saveGoal(_goal);
-      _persistSettings();
+      LocalStorage.saveSettings(
+        darkMode: _darkMode,
+        workoutReminder: _workoutReminder,
+        waterReminder: _waterReminder,
+        unitSystem: _unitSystem,
+      );
       LocalStorage.saveActivityLevel(_activityLevel.index);
+      if (_profileUpdatedAt != null) {
+        LocalStorage.saveProfileUpdatedAt(_profileUpdatedAt!);
+      }
     }
 
     await _syncItems('workout_logs', 'workout_logs');
@@ -495,6 +542,7 @@ class UserStore extends ChangeNotifier {
       bio: bio,
     );
     LocalStorage.saveProfile(_profile); // 写进本地存储
+    _touchProfile();
     _pushProfile();
     notifyListeners(); // 广播变化，所有监听这个 store 的界面都会重建
   }
@@ -503,6 +551,7 @@ class UserStore extends ChangeNotifier {
   void setAvatarUrl(String? url) {
     _profile = _profile.copyWith(avatarUrl: url);
     LocalStorage.saveProfile(_profile);
+    _touchProfile();
     _pushProfile();
     notifyListeners();
   }
@@ -523,6 +572,7 @@ class UserStore extends ChangeNotifier {
       dailyWaterMl: dailyWaterMl,
     );
     LocalStorage.saveGoal(_goal);
+    _touchProfile();
     _pushProfile();
     notifyListeners();
   }
@@ -854,6 +904,7 @@ class UserStore extends ChangeNotifier {
 
     _activityLevel = level;
     LocalStorage.saveActivityLevel(level.index);
+    _touchProfile();
     _pushProfile();
     notifyListeners();
   }
@@ -1033,6 +1084,7 @@ class UserStore extends ChangeNotifier {
     _workoutReminder = true;
     _waterReminder = false;
     _unitSystem = '公制';
+    _profileUpdatedAt = null;
     _aiPlans = [];
     _workoutLogs = [];
     _activePlanId = null;

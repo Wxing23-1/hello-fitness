@@ -37,6 +37,7 @@ class LocalStorage {
   static const String _keyCustomFoods = 'custom_foods';
   static const String _keyWeightLogs = 'weight_logs';
   static const String _keyActivityLevel = 'activity_level';
+  static const String _keyProfileUpdatedAt = 'profile_updated_at';
 
   /// 标记是否已经初始化过，防止重复 init
   static bool _initialized = false;
@@ -86,6 +87,21 @@ class LocalStorage {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 保存「资料包」最后修改时间（云同步冲突判断用）
+  ///
+  /// 资料包 = profile + goal + settings + activityLevel，这些是一整行同步的。
+  /// 每次本地修改或从云端拉取后都会更新，用于登录时判断「本地新还是云端新」。
+  static Future<void> saveProfileUpdatedAt(String iso) async {
+    if (!isReady) return;
+    await _box!.put(_keyProfileUpdatedAt, iso);
+  }
+
+  /// 读取资料包最后修改时间，没存过返回 null
+  static String? loadProfileUpdatedAt() {
+    if (!isReady) return null;
+    return _box!.get(_keyProfileUpdatedAt) as String?;
   }
 
   // ═══════════════════════════════════════════════════
