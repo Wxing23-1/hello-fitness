@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../home/main_screen.dart';
 import 'auth_page.dart';
-import 'reset_password_page.dart';
 
 /// 登录门卫
 ///
@@ -29,9 +28,6 @@ class _AuthGateState extends State<AuthGate> {
   /// 用户是否点了「暂不登录，随便看看」
   bool _skipped = false;
 
-  /// 是否处于「找回密码」流程（点了重置邮件里的链接）
-  bool _recovering = false;
-
   StreamSubscription<AuthState>? _sub;
 
   @override
@@ -52,14 +48,9 @@ class _AuthGateState extends State<AuthGate> {
   void _listen() {
     try {
       _sub = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+        final signedIn = state.session != null;
         if (!mounted) return;
         setState(() {
-          // 找回密码：点了重置邮件里的链接，先让用户设新密码，别直接进主界面
-          if (state.event == AuthChangeEvent.passwordRecovery) {
-            _recovering = true;
-            return;
-          }
-          final signedIn = state.session != null;
           _signedIn = signedIn;
           // 登录成功后清掉跳过标志，这样之后登出会正常回到登录页
           if (signedIn) _skipped = false;
@@ -78,15 +69,6 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    // 找回密码：优先显示设置新密码页，改完 onDone 里切回正常流程
-    if (_recovering) {
-      return ResetPasswordPage(
-        onDone: () => setState(() {
-          _recovering = false;
-          _signedIn = _initialSignedIn();
-        }),
-      );
-    }
     // Supabase 不可用（测试）直接进主界面
     if (_signedIn == null) return const MainScreen();
     // 已登录 → 主界面

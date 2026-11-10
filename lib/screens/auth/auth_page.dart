@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/user_store.dart';
+import 'forgot_password_page.dart';
 
 /// 登录 / 注册页
 ///
@@ -76,65 +77,10 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  /// 忘记密码：弹窗输入邮箱，发送重置邮件
+  /// 忘记密码：跳到「邮箱验证码」找回密码页
   Future<void> _forgotPassword() async {
-    final emailCtrl = TextEditingController();
-
-    final email = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('找回密码'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              '输入注册邮箱，我们会发送重置密码的链接。',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: '邮箱',
-                prefixIcon: Icon(Icons.email_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, emailCtrl.text.trim()),
-            child: const Text('发送'),
-          ),
-        ],
-      ),
-    );
-
-    emailCtrl.dispose();
-
-    if (email == null || !mounted) return;
-    if (email.isEmpty) {
-      _showMessage('请输入邮箱');
-      return;
-    }
-
-    final result = await AuthService.resetPassword(email);
-    if (!mounted) return;
-    _showMessage(
-      result.success ? '重置邮件已发送，请查收邮箱' : (result.error ?? '发送失败'),
-    );
-  }
-
-  void _showMessage(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ForgotPasswordPage()),
     );
   }
 

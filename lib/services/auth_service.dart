@@ -88,7 +88,7 @@ class AuthService {
 
   /// 用新密码更新当前用户密码（找回密码流程的最后一步）
   ///
-  /// 调用前提：当前是密码重置会话（用户点了重置邮件里的链接后）。
+  /// 调用前提：当前是密码重置会话（验证码校验通过后）。
   /// 成功后不用重新登录，当前会话仍然有效。
   static Future<AuthResult> updatePassword(String newPassword) async {
     try {
@@ -103,13 +103,39 @@ class AuthService {
     }
   }
 
-  /// 发送找回密码邮件
+  /// 发送「找回密码」验证码到邮箱（6 位数字，走 Email OTP）
   ///
-  /// 成功后 Supabase 会往这个邮箱发一封带重置链接的邮件，
-  /// 用户点链接即可设置新密码。
-  static Future<AuthResult> resetPassword(String email) async {
+  /// 和 magic link 不同：不发链接，改发验证码。用户拿到码回 App 里填，
+  /// 彻底避开「邮件链接在邮箱内置浏览器打开、校验码对不上」的问题。
+  /// shouldCreateUser=false：只给已注册的邮箱发，不借此创建新账号。
+  static Future<AuthResult> sendPasswordResetCode(String email) async {
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email.trim());
+      await Supabase.instance.client.auth.signInWithOtp(
+        email: email.trim(),
+        shouldCreateUser: false,
+      );
+      return const AuthResult.ok();
+    } on AuthException catch (e) {
+      return AuthResult.fail(_friendly(e.message));
+    } catch (_) {
+      return const AuthResult.fail('网络错误，请检查连接');
+    }
+  }
+
+  /// 校验验证码，成功后以「免密登录」方式进入会话，可以设新密码了
+  ///
+  /// 用 OtpType.email：signInWithOtp 发出的就是 email 类型的验证码，
+  /// 校验通过后建立会话（触发 signedIn），接着再 updatePassword 改密码。
+  static Future<AuthResult> verifyPasswordResetCode(
+    String email,
+    String code,
+  ) async {
+    try {
+      await Supabase.instance.client.auth.verifyOTP(
+        email: email.trim(),
+        token: code.trim(),
+        type: OtpType.email,
+      );
       return const AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.fail(_friendly(e.message));
@@ -126,6 +152,11 @@ class AuthService {
     if (m.contains('email not confirmed')) return '邮箱未验证，请先点击邮件里的链接';
     if (m.contains('password should be at least')) return '密码太短，至少 6 位';
     if (m.contains('valid email')) return '邮箱格式不正确';
+    if (m.contains('token has expired') || m.contains('otp expired')) {
+      return '验证码已过期，请重新发送';
+    }
+    if (m.contains('invalid') && m.contains('token')) return '验证码错误';
+    if (m.contains('otp')) return '验证码错误，请检查后重试';
     return message;
   }
 }
