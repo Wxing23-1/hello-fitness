@@ -1,12 +1,11 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../models/training_plan.dart';
 import '../models/user_profile.dart';
 import '../models/fitness_goal.dart';
 import '../models/workout_record.dart';
 import '../utils/health_utils.dart';
+import 'ai_backend.dart';
 
 /// AI 训练计划生成服务
 ///
@@ -23,26 +22,11 @@ import '../utils/health_utils.dart';
 /// 3. 喂给它真实的近期训练数据，而不是只给目标 —— 这样它能判断出
 ///    「你说想每周练5次，但过去两周平均只练了1.5次」，给出渐进方案
 class AiPlanService {
-  /// DeepSeek 的接口地址（OpenAI 兼容格式）
-  static const String _endpoint = 'https://api.deepseek.com/chat/completions';
-
-  /// 用的模型
-  ///
-  /// deepseek-chat 对应 DeepSeek-V3，速度快、便宜，
-  /// 生成训练计划这种任务完全够用
-  static const String _model = 'deepseek-chat';
-
-  /// 请求超时时间
-  ///
-  /// 生成一份完整计划要输出两三千 token，30 秒比较稳妥
-  static const Duration _timeout = Duration(seconds: 60);
-
   /// 生成训练计划
   ///
   /// 返回结果要么成功带回计划，要么失败带回原因，
   /// 调用方根据 success 分支处理
   static Future<AiPlanResult> generate({
-    required String apiKey,
     required UserProfile profile,
     required FitnessGoal goal,
     required List<WorkoutRecord> recentRecords,
@@ -51,11 +35,6 @@ class AiPlanService {
     required TrainingCategory? preferredCategory,
     required String equipment,
   }) async {
-    // API Key 没填就别浪费一次网络请求
-    if (apiKey.trim().isEmpty) {
-      return AiPlanResult.failure('还没有填写 DeepSeek API Key');
-    }
-
     try {
       final prompt = _buildPrompt(
         profile: profile,
@@ -67,72 +46,27 @@ class AiPlanService {
         equipment: equipment,
       );
 
-      final response = await http
-          .post(
-            Uri.parse(_endpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${apiKey.trim()}',
-            },
-            // 中文内容必须用 utf8 编码，不然服务端收到的是乱码
-            body: utf8.encode(jsonEncode({
-              'model': _model,
-              'messages': [
-                {
-                  'role': 'system',
-                  'content': '你是一位有十年经验的健身教练，擅长根据学员的实际情况'
-                      '制定循序渐进的训练计划。你只返回 JSON，不说任何多余的话。',
-                },
-                {'role': 'user', 'content': prompt},
-              ],
-              // 强制返回 JSON 格式
-              'response_format': {'type': 'json_object'},
-              // 温度调低一点：训练计划要稳妥，不需要天马行空
-              'temperature': 0.7,
-              // 留足输出空间，一份 4-5 天的计划大约 2500 token
-              'max_tokens': 4000,
-            })),
-          )
-          .timeout(_timeout);
-
-      // 先判断 HTTP 状态码
-      if (response.statusCode != 200) {
-        return AiPlanResult.failure(
-          _httpError(response.statusCode, response.body),
-        );
-      }
-
-      // 响应体也要按 utf8 解码，用 response.body 会把中文变成乱码
-      final body = jsonDecode(utf8.decode(response.bodyBytes))
-          as Map<String, dynamic>;
-
-      final choices = body['choices'] as List?;
-      if (choices == null || choices.isEmpty) {
-        return AiPlanResult.failure('AI 没有返回内容，请重试');
-      }
-
-      final content =
-          (choices.first as Map)['message']?['content'] as String?;
-
-      if (content == null || content.trim().isEmpty) {
-        return AiPlanResult.failure('AI 返回了空内容，请重试');
-      }
+      final content = await AiBackend.chat(
+        systemPrompt: '你是一位有十年经验的健身教练，擅长根据学员的实际情况'
+            '制定循序渐进的训练计划。你只返回 JSON，不说任何多余的话。',
+        userPrompt: prompt,
+        // 温度调低一点：训练计划要稳妥，不需要天马行空
+        temperature: 0.7,
+        maxTokens: 4000,
+        jsonObject: true,
+      );
 
       // 解析 JSON 并转成 TrainingPlan
       final plan = _parsePlan(content, goal);
       return AiPlanResult.success(plan);
-    } on http.ClientException catch (e) {
-      return AiPlanResult.failure('网络请求失败：${e.message}');
+    } on AiBackendException catch (e) {
+      return AiPlanResult.failure(e.message);
     } on FormatException {
       // AI 返回的不是合法 JSON
       return AiPlanResult.failure('AI 返回的格式不对，请重试一次');
     } catch (e) {
-      // 超时、解析字段缺失等
-      final msg = e.toString();
-      if (msg.contains('TimeoutException')) {
-        return AiPlanResult.failure('请求超时，网络可能不稳定，请重试');
-      }
-      return AiPlanResult.failure('生成失败：$msg');
+      // 解析字段缺失等
+      return AiPlanResult.failure('生成失败：$e');
     }
   }
 
@@ -450,32 +384,6 @@ $equipment
         return TrainingLevel.advanced;
       default:
         return TrainingLevel.intermediate;
-    }
-  }
-
-  /// 把 HTTP 错误码转成用户能看懂的中文
-  static String _httpError(int code, String body) {
-    switch (code) {
-      case 401:
-        return 'API Key 无效，请检查是否填写正确';
-      case 402:
-        return '账户余额不足，请到 DeepSeek 平台充值';
-      case 429:
-        return '请求太频繁，等一会儿再试';
-      case 500:
-      case 502:
-      case 503:
-        return 'DeepSeek 服务暂时不可用，稍后重试';
-      default:
-        // 尝试从响应体里提取具体错误信息
-        try {
-          final map = jsonDecode(body) as Map<String, dynamic>;
-          final msg = map['error']?['message'] as String?;
-          if (msg != null) return '请求失败（$code）：$msg';
-        } catch (_) {
-          // 响应体不是 JSON，忽略
-        }
-        return '请求失败，错误码 $code';
     }
   }
 }

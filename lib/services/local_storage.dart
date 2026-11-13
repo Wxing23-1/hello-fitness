@@ -28,7 +28,6 @@ class LocalStorage {
   static const String _keyRecords = 'records';
   static const String _keyFavorites = 'favorites';
   static const String _keySettings = 'settings';
-  static const String _keyApiKey = 'ai_api_key';
   static const String _keyAiPlans = 'ai_plans';
   static const String _keyWorkoutLogs = 'workout_logs';
   static const String _keyActivePlan = 'active_plan_id';
@@ -224,26 +223,6 @@ class LocalStorage {
     } catch (_) {
       return null;
     }
-  }
-
-  // ═══════════════════════════════════════════════════
-  //  AI API Key
-  // ═══════════════════════════════════════════════════
-
-  /// 保存 API Key
-  ///
-  /// 注意：Hive 的数据在设备上是明文存储的，不适合存高价值密钥。
-  /// 这里是用户自己的个人 key，泄露风险由用户自己承担，可以接受。
-  /// 如果以后要存服务端密钥，得换 flutter_secure_storage。
-  static Future<void> saveApiKey(String key) async {
-    if (!isReady) return;
-    await _box!.put(_keyApiKey, key);
-  }
-
-  /// 读取 API Key，没存过返回空字符串
-  static String loadApiKey() {
-    if (!isReady) return '';
-    return _box!.get(_keyApiKey) as String? ?? '';
   }
 
   // ═══════════════════════════════════════════════════

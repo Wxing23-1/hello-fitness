@@ -52,10 +52,9 @@ class _AiFoodPageState extends State<AiFoodPage> {
   Future<void> _estimate() async {
     final store = context.read<UserStore>();
 
-    if (!store.hasApiKey) {
+    if (!store.isSignedIn) {
       setState(() {
-        _error = '还没配置 DeepSeek API Key，'
-            '请到「我的 → 系统设置 → AI 配置」填写';
+        _error = '请先登录后再使用 AI 估算';
       });
       return;
     }
@@ -67,7 +66,6 @@ class _AiFoodPageState extends State<AiFoodPage> {
     });
 
     final res = await AiFoodService.estimate(
-      apiKey: store.aiApiKey,
       description: _controller.text,
     );
 
@@ -178,11 +176,11 @@ class _AiFoodPageState extends State<AiFoodPage> {
             ),
           ),
 
-          if (!store.hasApiKey) ...[
+          if (!store.isSignedIn) ...[
             const SizedBox(height: 8),
             Center(
               child: Text(
-                '需要先在「我的 → 系统设置 → AI 配置」填写 API Key',
+                '需要先登录才能使用 AI 估算',
                 style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
                 textAlign: TextAlign.center,
               ),

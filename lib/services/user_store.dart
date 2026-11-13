@@ -101,9 +101,6 @@ class UserStore extends ChangeNotifier {
   bool _waterReminder = false; // 喝水提醒
   String _unitSystem = '公制'; // 单位制：公制(kg/cm) 或 英制(lb/inch)
 
-  /// AI 服务的 API Key，用户在设置页自己填
-  String _aiApiKey = '';
-
   /// AI 生成的训练计划列表
   List<TrainingPlan> _aiPlans = [];
 
@@ -169,8 +166,6 @@ class UserStore extends ChangeNotifier {
       _waterReminder = settings['waterReminder'] as bool;
       _unitSystem = settings['unitSystem'] as String;
     }
-
-    _aiApiKey = LocalStorage.loadApiKey();
 
     // AI 计划以 JSON 字符串存储,逐条解析
     // 某一条坏了就跳过它，不影响其他计划
@@ -443,12 +438,6 @@ class UserStore extends ChangeNotifier {
   bool get waterReminder => _waterReminder;
   String get unitSystem => _unitSystem;
 
-  /// AI 服务的 API Key
-  String get aiApiKey => _aiApiKey;
-
-  /// 是否已配置 API Key，界面上用它决定要不要显示「去设置」提示
-  bool get hasApiKey => _aiApiKey.trim().isNotEmpty;
-
   /// AI 生成的计划，最新的在前
   List<TrainingPlan> get aiPlans => List.unmodifiable(_aiPlans.reversed);
 
@@ -627,13 +616,6 @@ class UserStore extends ChangeNotifier {
   void setUnitSystem(String value) {
     _unitSystem = value;
     _persistSettings();
-    notifyListeners();
-  }
-
-  /// 设置 AI API Key
-  void setAiApiKey(String key) {
-    _aiApiKey = key.trim();
-    LocalStorage.saveApiKey(_aiApiKey);
     notifyListeners();
   }
 
@@ -1100,12 +1082,6 @@ class UserStore extends ChangeNotifier {
     // 这样下次启动时所有 load 都返回 null，自然用默认值，
     // 也不会留下旧版本格式的脏数据
     LocalStorage.clearAll();
-
-    // API Key 不属于「数据」，重置后要留着 —— 用户重置是想清掉训练记录，
-    // 不是想重新去申请一次 key
-    if (_aiApiKey.isNotEmpty) {
-      LocalStorage.saveApiKey(_aiApiKey);
-    }
 
     notifyListeners();
   }

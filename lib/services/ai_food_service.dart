@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../models/food_item.dart';
+import 'ai_backend.dart';
 
 /// AI 食物营养估算服务
 ///
@@ -14,86 +13,35 @@ import '../models/food_item.dart';
 /// 文字描述其实够用而且更准 —— 用户知道自己放了多少油，
 /// 照片反而看不出来。拍照识别留作后续接入视觉模型时再加。
 class AiFoodService {
-  static const String _endpoint = 'https://api.deepseek.com/chat/completions';
-  static const String _model = 'deepseek-chat';
-
-  /// 估算单个食物只输出几十 token，30 秒够了
-  static const Duration _timeout = Duration(seconds: 30);
-
   /// 估算食物营养
   ///
   /// [description] 用户的描述，比如「食堂的番茄炒蛋，一盘」
   static Future<AiFoodResult> estimate({
-    required String apiKey,
     required String description,
   }) async {
-    if (apiKey.trim().isEmpty) {
-      return AiFoodResult.failure('还没有填写 DeepSeek API Key');
-    }
-
     final desc = description.trim();
     if (desc.isEmpty) {
       return AiFoodResult.failure('请先描述你吃了什么');
     }
 
     try {
-      final response = await http
-          .post(
-            Uri.parse(_endpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${apiKey.trim()}',
-            },
-            // 中文必须显式 utf8 编码，不然服务端收到乱码
-            body: utf8.encode(jsonEncode({
-              'model': _model,
-              'messages': [
-                {
-                  'role': 'system',
-                  'content': '你是一位营养师，擅长估算中餐的营养成分。'
-                      '你只返回 JSON，不说任何多余的话。',
-                },
-                {'role': 'user', 'content': _buildPrompt(desc)},
-              ],
-              'response_format': {'type': 'json_object'},
-              // 营养估算要稳定，温度调低
-              'temperature': 0.3,
-              'max_tokens': 500,
-            })),
-          )
-          .timeout(_timeout);
-
-      if (response.statusCode != 200) {
-        return AiFoodResult.failure(
-          _httpError(response.statusCode, response.body),
-        );
-      }
-
-      // 响应体也要按 utf8 解码
-      final body =
-          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-
-      final choices = body['choices'] as List?;
-      if (choices == null || choices.isEmpty) {
-        return AiFoodResult.failure('AI 没有返回内容，请重试');
-      }
-
-      final content = (choices.first as Map)['message']?['content'] as String?;
-      if (content == null || content.trim().isEmpty) {
-        return AiFoodResult.failure('AI 返回了空内容，请重试');
-      }
+      final content = await AiBackend.chat(
+        systemPrompt: '你是一位营养师，擅长估算中餐的营养成分。'
+            '你只返回 JSON，不说任何多余的话。',
+        userPrompt: _buildPrompt(desc),
+        // 营养估算要稳定，温度调低
+        temperature: 0.3,
+        maxTokens: 500,
+        jsonObject: true,
+      );
 
       return AiFoodResult.success(_parse(content));
-    } on http.ClientException catch (e) {
-      return AiFoodResult.failure('网络请求失败：${e.message}');
+    } on AiBackendException catch (e) {
+      return AiFoodResult.failure(e.message);
     } on FormatException {
       return AiFoodResult.failure('AI 返回的格式不对，请重试一次');
     } catch (e) {
-      final msg = e.toString();
-      if (msg.contains('TimeoutException')) {
-        return AiFoodResult.failure('请求超时，网络可能不稳定，请重试');
-      }
-      return AiFoodResult.failure('估算失败：$msg');
+      return AiFoodResult.failure('估算失败：$e');
     }
   }
 
@@ -198,30 +146,6 @@ class AiFoodService {
       if (c.name.toLowerCase() == v) return c;
     }
     return FoodCategory.other;
-  }
-
-  static String _httpError(int code, String body) {
-    switch (code) {
-      case 401:
-        return 'API Key 无效，请检查是否填写正确';
-      case 402:
-        return '账户余额不足，请到 DeepSeek 平台充值';
-      case 429:
-        return '请求太频繁，等一会儿再试';
-      case 500:
-      case 502:
-      case 503:
-        return 'DeepSeek 服务暂时不可用，稍后重试';
-      default:
-        try {
-          final map = jsonDecode(body) as Map<String, dynamic>;
-          final msg = map['error']?['message'] as String?;
-          if (msg != null) return '请求失败（$code）：$msg';
-        } catch (_) {
-          // 响应体不是 JSON，忽略
-        }
-        return '请求失败，错误码 $code';
-    }
   }
 }
 

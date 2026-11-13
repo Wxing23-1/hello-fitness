@@ -6,6 +6,7 @@ import '../../models/workout_log.dart';
 import '../../services/user_store.dart';
 import '../../utils/health_utils.dart';
 import '../../widgets/user_avatar.dart';
+import 'ai_analysis_page.dart';
 import '../training/ai_generate_page.dart';
 import '../training/plan_detail_page.dart';
 import '../training/start_session.dart';
@@ -39,6 +40,8 @@ class HomeDashboardPage extends StatelessWidget {
           _WeekProgressCard(store: store),
           const SizedBox(height: 14),
           _SuggestionCard(store: store),
+          const SizedBox(height: 14),
+          _AiAnalysisCard(store: store),
           const SizedBox(height: 14),
           _WeightGoalCard(store: store),
           const SizedBox(height: 14),
@@ -590,6 +593,68 @@ class _SuggestionCard extends StatelessWidget {
       Colors.blue,
       '今天该训练了',
       left > 0 ? '本周还差 $left 次达成目标' : '保持节奏，坚持下去',
+    );
+  }
+}
+
+/// AI 今日分析入口卡
+///
+/// 把今天的训练+饮食+体重数据交给 AI 做复盘，是首页的「每日复盘」入口。
+class _AiAnalysisCard extends StatelessWidget {
+  final UserStore store;
+
+  const _AiAnalysisCard({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.teal.shade400, Colors.indigo.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI 今日分析',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '复盘今天的训练和饮食，安排明天的计划',
+                  style: TextStyle(fontSize: 11, color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AiAnalysisPage()),
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.indigo.shade600,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('去分析', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
     );
   }
 }

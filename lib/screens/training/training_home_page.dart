@@ -231,10 +231,10 @@ class _TrainingHomePageState extends State<TrainingHomePage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    // 根据有没有配 key 显示不同文案
-                    store.hasApiKey
+                    // 根据有没有登录显示不同文案
+                    store.isSignedIn
                         ? '说说你的想法，AI 结合你的运动数据来安排'
-                        : '需要先配置 DeepSeek API Key',
+                        : '需要先登录才能使用 AI 定制计划',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.white.withOpacity(0.9),

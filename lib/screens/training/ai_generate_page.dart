@@ -55,10 +55,10 @@ class _AiGeneratePageState extends State<AiGeneratePage> {
   Future<void> _generate() async {
     final store = context.read<UserStore>();
 
-    // 没填 key 直接提示，别浪费一次请求
-    if (!store.hasApiKey) {
+    // 没登录直接提示，别浪费一次请求
+    if (!store.isSignedIn) {
       setState(() {
-        _error = '还没配置 DeepSeek API Key，请到「我的 → 系统设置 → AI 配置」填写';
+        _error = '请先登录后再使用 AI 定制计划';
       });
       return;
     }
@@ -69,7 +69,6 @@ class _AiGeneratePageState extends State<AiGeneratePage> {
     });
 
     final result = await AiPlanService.generate(
-      apiKey: store.aiApiKey,
       profile: store.profile,
       goal: store.goal,
       // 把真实训练记录传进去，这是「根据当前运动量定强度」的关键
@@ -254,11 +253,11 @@ class _AiGeneratePageState extends State<AiGeneratePage> {
             ),
             const SizedBox(height: 8),
 
-            // 没配 key 时给个入口提示
-            if (!store.hasApiKey)
+            // 没登录时给个入口提示
+            if (!store.isSignedIn)
               Center(
                 child: Text(
-                  '需要先在「我的 → 系统设置 → AI 配置」填写 DeepSeek API Key',
+                  '需要先登录才能使用 AI 定制计划',
                   style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
                   textAlign: TextAlign.center,
                 ),

@@ -46,35 +46,6 @@ class SettingsPage extends StatelessWidget {
             onTap: () => _showUnitPicker(context, store),
           ),
 
-          // ══════════ AI 配置 ══════════
-          _groupTitle('AI 配置'),
-
-          _navTile(
-            icon: Icons.auto_awesome,
-            iconColor: Colors.purple,
-            title: 'DeepSeek API Key',
-            // 已配置就显示「已配置」，没配置提示去填
-            trailingText: store.hasApiKey ? '已配置' : '未配置',
-            onTap: () => _showApiKeyDialog(context, store),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 13, color: Colors.grey.shade500),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'AI 定制训练计划需要 Key。到 platform.deepseek.com '
-                    '注册获取，国内直连不用代理',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           // ══════════ 提醒 ══════════
           _groupTitle('提醒'),
 
@@ -290,14 +261,6 @@ class SettingsPage extends StatelessWidget {
   //  各种对话框
   // ═══════════════════════════════════════════════════
 
-  /// API Key 配置对话框
-  void _showApiKeyDialog(BuildContext context, UserStore store) {
-    showDialog(
-      context: context,
-      builder: (_) => const _ApiKeyDialog(),
-    );
-  }
-
   /// 单位制选择面板
   void _showUnitPicker(BuildContext context, UserStore store) {
     showModalBottomSheet(
@@ -413,7 +376,7 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  /// 关于对话框（内容在文件底部的 _ApiKeyDialog 之后）
+  /// 关于对话框
   void _showAbout(BuildContext context) {
     showDialog(
       context: context,
@@ -446,154 +409,6 @@ class SettingsPage extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// DeepSeek API Key 配置对话框
-///
-/// 独立的有状态组件：要管理输入框内容和「是否明文显示」的切换状态
-class _ApiKeyDialog extends StatefulWidget {
-  const _ApiKeyDialog();
-
-  @override
-  State<_ApiKeyDialog> createState() => _ApiKeyDialogState();
-}
-
-class _ApiKeyDialogState extends State<_ApiKeyDialog> {
-  late final TextEditingController _controller;
-
-  /// 是否明文显示 Key，默认隐藏
-  bool _visible = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // 用已保存的 key 填充，方便用户查看或修改
-    _controller = TextEditingController(
-      text: context.read<UserStore>().aiApiKey,
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('DeepSeek API Key'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _controller,
-            // obscureText 把输入内容显示成圆点，防止旁人看到
-            obscureText: !_visible,
-            decoration: InputDecoration(
-              hintText: 'sk-...',
-              border: const OutlineInputBorder(),
-              isDense: true,
-              // 右侧眼睛图标切换明文/隐藏
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _visible ? Icons.visibility_off : Icons.visibility,
-                  size: 20,
-                ),
-                onPressed: () => setState(() => _visible = !_visible),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '怎么获取：',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '1. 打开 platform.deepseek.com\n'
-                  '2. 用手机号或邮箱注册登录\n'
-                  '3. 左边菜单「API keys」→ 创建\n'
-                  '4. 复制那串 sk- 开头的字符粘贴到上面\n\n'
-                  '国内直连，不需要代理。\n'
-                  '按用量计费，生成一份计划约几分钱。',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.blue.shade900,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // 安全提示：Key 存在本地明文，告知用户
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.shield_outlined,
-                  size: 13, color: Colors.grey.shade600),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Key 只保存在你的设备上，不会上传到任何服务器',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        // 已经配置过才显示清除按钮
-        if (context.read<UserStore>().hasApiKey)
-          TextButton(
-            onPressed: () {
-              context.read<UserStore>().setAiApiKey('');
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('已清除 API Key'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            child: const Text('清除', style: TextStyle(color: Colors.red)),
-          ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () {
-            context.read<UserStore>().setAiApiKey(_controller.text);
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('API Key 已保存'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          },
-          child: const Text('保存'),
-        ),
-      ],
     );
   }
 }
