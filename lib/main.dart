@@ -29,6 +29,9 @@ void main() async {
   await Supabase.initialize(
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.anonKey,
+    authOptions: const FlutterAuthClientOptions(
+      localStorage: EmptyLocalStorage(),
+    ),
   );
 
   // 打开本地数据库，之后 UserStore 构造时就能读到上次保存的数据
