@@ -249,6 +249,110 @@ class CommunityService {
     }
   }
 
+  /// 订阅某帖的新评论（实时）
+  ///
+  /// 有人在这条帖子下新评论时回调 onNewComment，详情页实时追加。
+  static RealtimeChannel? subscribeToNewComments(
+    String postId,
+    void Function(PostComment comment) onNewComment,
+  ) {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final channel = client.channel('public:post_comments:$postId');
+      channel
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'post_comments',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'post_id',
+              value: postId,
+            ),
+            callback: (payload) {
+              onNewComment(PostComment.fromMap(payload.newRecord));
+            },
+          )
+          .subscribe();
+      return channel;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 订阅点赞数变化（实时）
+  ///
+  /// delta 为 +1（新赞）或 -1（取消赞）。回调里带上 userId，
+  /// 页面据此跳过「自己」的点赞事件（避免和本地乐观更新重复计数）。
+  static RealtimeChannel? subscribeToLikes(
+    void Function(String postId, String userId, int delta) onLikeChange,
+  ) {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final channel = client.channel('public:post_likes');
+      channel
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'post_likes',
+            callback: (payload) {
+              final record = payload.eventType == PostgresChangeEvent.delete
+                  ? payload.oldRecord
+                  : payload.newRecord;
+              final postId = record['post_id'] as String?;
+              final userId = record['user_id'] as String?;
+              if (postId == null || userId == null) return;
+              onLikeChange(
+                postId,
+                userId,
+                payload.eventType == PostgresChangeEvent.insert ? 1 : -1,
+              );
+            },
+          )
+          .subscribe();
+      return channel;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 订阅评论数变化（实时），delta 为 +1（新评论）或 -1（删评论）
+  static RealtimeChannel? subscribeToComments(
+    void Function(String postId, int delta) onCommentChange,
+  ) {
+    final client = _client;
+    if (client == null) return null;
+
+    try {
+      final channel = client.channel('public:post_comments');
+      channel
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'post_comments',
+            callback: (payload) {
+              final record = payload.eventType == PostgresChangeEvent.delete
+                  ? payload.oldRecord
+                  : payload.newRecord;
+              final postId = record['post_id'] as String?;
+              if (postId == null) return;
+              onCommentChange(
+                postId,
+                payload.eventType == PostgresChangeEvent.insert ? 1 : -1,
+              );
+            },
+          )
+          .subscribe();
+      return channel;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 上传帖子图片，返回公开 URL
   static Future<String?> uploadPostImage(Uint8List bytes) async {
     final client = _client;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/community_post.dart';
 import '../../models/post_comment.dart';
@@ -26,17 +27,39 @@ class _PostDetailPageState extends State<PostDetailPage> {
   final _commentCtrl = TextEditingController();
   List<PostComment>? _comments;
   bool _sending = false;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
     super.initState();
     _loadComments();
+    _subscribeComments();
   }
 
   @override
   void dispose() {
     _commentCtrl.dispose();
+    _channel?.unsubscribe();
     super.dispose();
+  }
+
+  /// 订阅实时事件：别人在这条帖子下新评论，实时追加到列表
+  void _subscribeComments() {
+    _channel = CommunityService.subscribeToNewComments(
+      widget.post.id,
+      _onNewComment,
+    );
+  }
+
+  /// 收到一条实时新评论
+  void _onNewComment(PostComment c) {
+    if (!mounted) return;
+    setState(() {
+      final list = _comments ?? [];
+      // 自己刚发的评论，_loadComments 已经带回来了，避免重复
+      if (list.any((e) => e.id == c.id)) return;
+      _comments = [...list, c];
+    });
   }
 
   Future<void> _loadComments() async {

@@ -34,6 +34,8 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
   bool _hasMore = true;
   int _newCount = 0;
   RealtimeChannel? _channel;
+  RealtimeChannel? _likeChannel;
+  RealtimeChannel? _commentChannel;
 
   @override
   void initState() {
@@ -41,12 +43,15 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
     _load();
     _scrollCtrl.addListener(_onScroll);
     _subscribeNewPosts();
+    _subscribeInteractions();
   }
 
   @override
   void dispose() {
     _scrollCtrl.dispose();
     _channel?.unsubscribe();
+    _likeChannel?.unsubscribe();
+    _commentChannel?.unsubscribe();
     super.dispose();
   }
 
@@ -89,6 +94,36 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
   void _subscribeNewPosts() {
     _channel = CommunityService.subscribeToNewPosts(() {
       if (mounted) setState(() => _newCount++);
+    });
+  }
+
+  /// 订阅实时互动：点赞数、评论数变动时实时更新对应帖子
+  void _subscribeInteractions() {
+    _likeChannel = CommunityService.subscribeToLikes(_applyLikeDelta);
+    _commentChannel = CommunityService.subscribeToComments(_applyCommentDelta);
+  }
+
+  void _applyLikeDelta(String postId, String userId, int delta) {
+    if (!mounted) return;
+    // 自己的点赞事件，_toggleLike 已经本地更新过了，跳过避免重复计数
+    if (userId == AuthService.currentUserId) return;
+    setState(() {
+      _posts = _posts.map((p) {
+        if (p.id != postId) return p;
+        final next = p.likesCount + delta;
+        return p.copyWith(likesCount: next < 0 ? 0 : next);
+      }).toList();
+    });
+  }
+
+  void _applyCommentDelta(String postId, int delta) {
+    if (!mounted) return;
+    setState(() {
+      _posts = _posts.map((p) {
+        if (p.id != postId) return p;
+        final next = p.commentCount + delta;
+        return p.copyWith(commentCount: next < 0 ? 0 : next);
+      }).toList();
     });
   }
 
@@ -151,19 +186,10 @@ class _CommunityHomePageState extends State<CommunityHomePage> {
     setState(() {
       _posts = _posts.map((p) {
         if (p.id != post.id) return p;
-        return CommunityPost(
-          id: p.id,
-          userId: p.userId,
-          authorName: p.authorName,
-          text: p.text,
-          createdAt: p.createdAt,
-          authorAvatar: p.authorAvatar,
-          imageUrl: p.imageUrl,
-          workoutSnapshot: p.workoutSnapshot,
-          mealSnapshot: p.mealSnapshot,
-          likesCount: liked ? p.likesCount + 1 : p.likesCount - 1,
+        final next = liked ? p.likesCount + 1 : p.likesCount - 1;
+        return p.copyWith(
+          likesCount: next < 0 ? 0 : next,
           likedByMe: liked,
-          commentCount: p.commentCount,
         );
       }).toList();
     });

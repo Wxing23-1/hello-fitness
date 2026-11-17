@@ -60,4 +60,28 @@ class CommunityPost {
       commentCount: commentCount,
     );
   }
+
+  /// 复制并替换互动计数（点赞数/是否我赞过/评论数）
+  ///
+  /// 实时订阅更新计数时用，正文和作者信息不变。
+  CommunityPost copyWith({
+    int? likesCount,
+    bool? likedByMe,
+    int? commentCount,
+  }) {
+    return CommunityPost(
+      id: id,
+      userId: userId,
+      authorName: authorName,
+      text: text,
+      createdAt: createdAt,
+      authorAvatar: authorAvatar,
+      imageUrl: imageUrl,
+      workoutSnapshot: workoutSnapshot,
+      mealSnapshot: mealSnapshot,
+      likesCount: likesCount ?? this.likesCount,
+      likedByMe: likedByMe ?? this.likedByMe,
+      commentCount: commentCount ?? this.commentCount,
+    );
+  }
 }
